@@ -415,6 +415,22 @@ impl DirectoryManager {
         )
     }
 
+    fn create_directory(&mut self, directory_sub_path: &str) -> PyResult<()> {
+        // Construct the full path of the directory
+        let full_path = Path::new(&self.root_path).join(directory_sub_path);
+
+        // Create the directory
+        fs::create_dir_all(&full_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        // Create a new Directory object
+        let new_directory = Directory::new(full_path.to_string_lossy().into_owned());
+
+        // Add the new directory to the directories vector
+        self.directories.push(new_directory);
+
+        Ok(())
+    }
+
     fn delete_directories(
         &mut self,
         name: Option<&str>,
