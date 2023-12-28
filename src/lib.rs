@@ -1,18 +1,18 @@
-use pyo3::PyResult;
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyFloat};
 use pyo3::exceptions::PyIOError;
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyFloat};
+use pyo3::PyResult;
 
-/// UNIX_EPOCH is a reference point (January 1, 1970, at 00:00 UTC)
-use std::time::UNIX_EPOCH;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Path;
+use std::path::PathBuf;
+/// UNIX_EPOCH is a reference point (January 1, 1970, at 00:00 UTC)
+use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
 #[pyclass]
@@ -74,8 +74,7 @@ impl File {
             .open(&self.path)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        write!(file, "{}", text)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        write!(file, "{}", text).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(())
     }
@@ -88,27 +87,32 @@ impl File {
             .open(&self.path)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        writeln!(file, "{}", text)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        writeln!(file, "{}", text).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(())
     }
 
     fn get_metadata(&self, py: Python) -> PyResult<PyObject> {
-        let metadata = fs::metadata(&self.path)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let metadata =
+            fs::metadata(&self.path).map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new(py);
 
         if let Ok(last_modified) = metadata.modified() {
             if let Ok(duration_since_epoch) = last_modified.duration_since(UNIX_EPOCH) {
-                dict.set_item("last_modified", PyFloat::new(py, duration_since_epoch.as_secs_f64()))?;
+                dict.set_item(
+                    "last_modified",
+                    PyFloat::new(py, duration_since_epoch.as_secs_f64()),
+                )?;
             }
         }
 
         if let Ok(creation_time) = metadata.created() {
             if let Ok(duration_since_epoch) = creation_time.duration_since(UNIX_EPOCH) {
-                dict.set_item("creation_time", PyFloat::new(py, duration_since_epoch.as_secs_f64()))?;
+                dict.set_item(
+                    "creation_time",
+                    PyFloat::new(py, duration_since_epoch.as_secs_f64()),
+                )?;
             }
         }
 
@@ -459,8 +463,14 @@ impl DirectoryManager {
         extension: Option<&str>,
         dest_directory_name: Option<&str>,
         dest_sub_path: Option<&str>,
+        files_to_move: Option<Vec<File>>,
     ) -> PyResult<()> {
-        let files_to_move = self.find_files(name, sub_path, extension, Some(false))?;
+        let files_to_move = if let Some(override_files) = files_to_move {
+            override_files
+        } else {
+            self.find_files(name, sub_path, extension, Some(false))?
+        };
+
         let destination_directories =
             self.find_directories(dest_directory_name, dest_sub_path, Some(false))?;
 
@@ -476,31 +486,45 @@ impl DirectoryManager {
 
         let dest_path = PathBuf::from(&destination_directories[0].path);
 
-        // Collect indices of files to be moved
-        let indices_to_move: Vec<usize> = self
-            .files
-            .iter()
-            .enumerate()
-            .filter_map(|(index, file)| {
-                if files_to_move.iter().any(|f| f.path == file.path) {
-                    Some(index)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Move files and update their paths in the vector
-        for index in indices_to_move {
-            if let Some(file) = self.files.get_mut(index) {
-                let new_file_path = dest_path.join(&file.name);
-                fs::rename(&file.path, &new_file_path)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-                file.path = new_file_path.to_string_lossy().into_owned();
+        for file in files_to_move {
+            let new_file_path = dest_path.join(&file.name);
+            fs::rename(&file.path, &new_file_path)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            // Update file path in the original vector
+            if let Some(f) = self.files.iter_mut().find(|f| f.path == file.path) {
+                f.path = new_file_path.to_string_lossy().into_owned();
             }
         }
 
         Ok(())
+    }
+
+    fn move_file(
+        &mut self,
+        name: Option<&str>,
+        sub_path: Option<&str>,
+        extension: Option<&str>,
+        dest_directory_name: Option<&str>,
+        dest_sub_path: Option<&str>,
+    ) -> PyResult<()> {
+        // Find the first file that matches the criteria
+        let files_to_move = self.find_files(name, sub_path, extension, Some(true))?;
+
+        // Check if a file was found
+        if files_to_move.is_empty() {
+            return Err(PyIOError::new_err("No matching file found to move"));
+        }
+
+        // Call move_files with the first found file
+        // Some parameters are not used since files_to_move_override is provided
+        self.move_files(
+            None,
+            None,
+            None, 
+            dest_directory_name,
+            dest_sub_path,
+            Some(vec![files_to_move[0].clone()]),
+        )
     }
 
     fn delete_directories(
