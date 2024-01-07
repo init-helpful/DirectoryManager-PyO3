@@ -1,3 +1,5 @@
+use crate::Directory;
+use crate::File;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashSet;
@@ -6,9 +8,6 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-
-use crate::Directory;
-use crate::File;
 
 #[pyclass]
 pub struct DirectoryManager {
@@ -256,10 +255,19 @@ impl DirectoryManager {
         extension: Option<&str>,
     ) -> PyResult<()> {
         // Find the file to rename
-        let mut old_file = self.find_file(name, sub_path, extension)?;
+        let old_file = self.find_file(name, sub_path, extension)?;
 
         // Rename the file
-        old_file.rename(new_name);
+        let mut renamed_file = old_file.clone();
+        renamed_file.rename(new_name);
+
+        // Update the file in the files list
+        for file in &mut self.files {
+            if file.path == old_file.path {
+                *file = renamed_file.clone();
+                break;
+            }
+        }
 
         Ok(())
     }

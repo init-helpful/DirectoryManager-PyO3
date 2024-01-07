@@ -3,12 +3,12 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat};
 use pyo3::PyResult;
+use std::ffi::OsStr;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-
 impl PartialEq for File {
     fn eq(&self, other: &Self) -> bool {
         self.path == other.path
@@ -58,7 +58,14 @@ impl File {
         // Construct the new path
         let old_path = Path::new(&self.path);
         let parent = old_path.parent().expect("Failed to get parent directory");
-        let new_path = parent.join(new_name);
+
+        // Extract the extension from the old file name
+        let extension = old_path.extension().and_then(OsStr::to_str).unwrap_or("");
+
+        // Append the extension to the new file name
+        let new_name_with_extension = format!("{}.{}", new_name, extension);
+
+        let new_path = parent.join(&new_name_with_extension);
 
         // Rename the file
         fs::rename(&old_path, &new_path).expect("Failed to rename file");
@@ -81,13 +88,13 @@ impl File {
             .append(overwrite)
             .open(&self.path)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    
+
         if overwrite {
             write!(file, "{}", text).map_err(|e| PyIOError::new_err(e.to_string()))?;
         } else {
             writeln!(file, "{}", text).map_err(|e| PyIOError::new_err(e.to_string()))?;
         }
-    
+
         Ok(())
     }
 
