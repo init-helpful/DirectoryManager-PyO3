@@ -1,0 +1,2 @@
+maturin build -release -i <python inerpreter path>
+maturin publish -i <python inerpreter path>

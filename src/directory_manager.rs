@@ -1,3 +1,5 @@
+use crate::Directory;
+use crate::File;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashSet;
@@ -6,9 +8,6 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-
-use crate::Directory;
-use crate::File;
 
 #[pyclass]
 pub struct DirectoryManager {
@@ -131,7 +130,7 @@ impl DirectoryManager {
         name: Option<&str>,
         sub_path: Option<&str>,
         extension: Option<&str>,
-        return_first_found: Option<bool>, // New optional parameter
+        return_first_found: Option<bool>,
     ) -> PyResult<Vec<File>> {
         let mut matched_files = Vec::new();
 
@@ -161,6 +160,24 @@ impl DirectoryManager {
 
         Ok(matched_files)
     }
+
+
+    fn find_text(&self, sub_string: &str) -> PyResult<Vec<File>> {
+        let mut matched_files = Vec::new();
+
+        for file in &self.files {
+            // Use the read method from the File class to get file content
+            let content = file.read()?;
+            
+            // Perform exact substring search
+            if content.contains(sub_string) {
+                matched_files.push(file.clone());
+            }
+        }
+
+        Ok(matched_files)
+    }
+
 
     /// Finds a single file based on name, sub-path, and extension criteria.
     /// Returns the first file that matches the criteria.
@@ -256,10 +273,19 @@ impl DirectoryManager {
         extension: Option<&str>,
     ) -> PyResult<()> {
         // Find the file to rename
-        let mut old_file = self.find_file(name, sub_path, extension)?;
+        let old_file = self.find_file(name, sub_path, extension)?;
 
         // Rename the file
-        old_file.rename(new_name);
+        let mut renamed_file = old_file.clone();
+        renamed_file.rename(new_name);
+
+        // Update the file in the files list
+        for file in &mut self.files {
+            if file.path == old_file.path {
+                *file = renamed_file.clone();
+                break;
+            }
+        }
 
         Ok(())
     }
