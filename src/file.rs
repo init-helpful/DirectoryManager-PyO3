@@ -9,7 +9,6 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-
 impl PartialEq for File {
     fn eq(&self, other: &Self) -> bool {
         self.path == other.path
