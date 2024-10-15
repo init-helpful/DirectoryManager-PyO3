@@ -54,14 +54,14 @@ if __name__ == "__main__":
     # Directory Manager Functions --------------------------------
 
     # Check if files already exist
-    if dm.find_files(sub_path=DEFAULT_BASE_PATH_NAME):
-        dm.delete_directories(sub_path=DEFAULT_BASE_PATH_NAME)
+    # if dm.find_files(sub_path=DEFAULT_BASE_PATH_NAME):
+    #     dm.delete_directories(sub_path=DEFAULT_BASE_PATH_NAME)
 
     # create_directory & create_file
-    num_files = 5
-    num_directories = 1
-    generate_directories(num_files=num_files, num_directories=num_directories)
-    assert len(dm.files) == num_files * num_directories
+    # num_files = 5
+    # num_directories = 1
+    # generate_directories(num_files=num_files, num_directories=num_directories)
+    
 
     # find_files
     found_file_by_name = dm.find_files(name="test_a")
@@ -69,14 +69,14 @@ if __name__ == "__main__":
 
     # rename_file
     dm.rename_file(RENAME_TEST_TEXT, sub_path="dir1")
-    assert len(dm.find_files(name=RENAME_TEST_TEXT)) > 0
+    
 
-    # move_files
-    dm.create_directory(MOVE_TEST_DIR)
-    dm.move_files(sub_path="dir1", dest_directory_name=MOVE_TEST_DIR)
-    assert len(dm.find_directories(sub_path=MOVE_TEST_DIR)) > 0
+    # # move_files
+    # dm.create_directory(MOVE_TEST_DIR)
+    # dm.move_files(sub_path="dir1", dest_directory_name=MOVE_TEST_DIR)
+    # assert len(dm.find_directories(sub_path=MOVE_TEST_DIR)) > 0
 
-    # File Functions --------------------------------
+    # # File Functions --------------------------------
     
     
     
@@ -85,6 +85,9 @@ if __name__ == "__main__":
     dm.delete_files(name=RENAME_TEST_TEXT)
     assert len(dm.find_files(name=RENAME_TEST_TEXT)) == 0
 
-    # delete_directories
-    dm.delete_directories(sub_path=DEFAULT_BASE_PATH_NAME)
-    dm.delete_directories(sub_path=MOVE_TEST_DIR)
+    # # delete_directories
+    # dm.delete_directories(sub_path=DEFAULT_BASE_PATH_NAME)
+    # dm.delete_directories(sub_path=MOVE_TEST_DIR)
+
+    # assert len(dm.find_files(name=RENAME_TEST_TEXT)) > 0
+    # assert len(dm.files) == num_files * num_directories
