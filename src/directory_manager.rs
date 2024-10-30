@@ -290,30 +290,37 @@ impl DirectoryManager {
         Ok(())
     }
 
-    fn print_tree(&self, level: Option<usize>) -> PyResult<()> {
-        self.print_sub_tree(&self.root_path, level.unwrap_or(0))
+    fn print_tree(&self) -> PyResult<()> {
+        let tree_string = self.get_sub_tree_string(None, None);
+        println!("{}", tree_string);
+        Ok(())
     }
+    
 
-    fn print_sub_tree(&self, current_path: &str, level: usize) -> PyResult<()> {
+    fn get_sub_tree_string(&self, current_path: Option<&str>, level: Option<usize>) -> String {
+        let current_path = current_path.unwrap_or(&self.root_path);
+        let level = level.unwrap_or(0);
+        
+        let mut result = String::new();
         let padding = " ".repeat(level * 2);
 
-        // Print the name of the current directory
+        // Add the name of the current directory to the result
         if let Some(name) = Path::new(current_path).file_name().and_then(|n| n.to_str()) {
-            println!("{}{}/", padding, name);
+            result.push_str(&format!("{}{}/\n", padding, name));
         }
 
-        // Print sub-directories within the current directory
+        // Process sub-directories within the current directory
         for directory in &self.directories {
             if Path::new(&directory.path)
                 .parent()
                 .and_then(|p| p.to_str())
                 .map_or(false, |p| p == current_path)
             {
-                self.print_sub_tree(&directory.path, level + 1)?;
+                result.push_str(&self.get_sub_tree_string(Some(&directory.path), Some(level + 1)));
             }
         }
 
-        // Print files within the current directory, with an extra indent
+        // Add files within the current directory, with an extra indent
         let file_padding = " ".repeat((level + 1) * 2);
         for file in &self.files {
             if Path::new(&file.path)
@@ -322,12 +329,13 @@ impl DirectoryManager {
                 .map_or(false, |p| p == current_path)
             {
                 let display_name = format!("{}.{}", file.name, file.extension);
-                println!("{}{}", file_padding, display_name);
+                result.push_str(&format!("{}{}\n", file_padding, display_name));
             }
         }
 
-        Ok(())
+        result
     }
+    
 
     fn compare_to(&self, other: &DirectoryManager) -> PyResult<Vec<String>> {
         let self_files: HashSet<_> = self.files.iter().map(|f| &f.path).collect();

@@ -49,7 +49,9 @@ def time_it(func):
 
 if __name__ == "__main__":
     # Create a new DirectoryManager instance
-    dm = DirectoryManager(".//Tests//Data")
+    # dm = DirectoryManager(".//Tests//Data")
+    dm = DirectoryManager()
+    print(dm.get_sub_tree_string(None,None))
 
     # Directory Manager Functions --------------------------------
 
@@ -64,11 +66,11 @@ if __name__ == "__main__":
     
 
     # find_files
-    found_file_by_name = dm.find_files(name="test_a")
-    assert len(found_file_by_name) > 0
+    # found_file_by_name = dm.find_files(name="test_a")
+    # assert len(found_file_by_name) > 0
 
     # rename_file
-    dm.rename_file(RENAME_TEST_TEXT, sub_path="dir1")
+    # dm.rename_file(RENAME_TEST_TEXT, sub_path="dir1")
     
 
     # # move_files
@@ -82,8 +84,8 @@ if __name__ == "__main__":
     
     
     # delete_file
-    dm.delete_files(name=RENAME_TEST_TEXT)
-    assert len(dm.find_files(name=RENAME_TEST_TEXT)) == 0
+    # dm.delete_files(name=RENAME_TEST_TEXT)
+    # assert len(dm.find_files(name=RENAME_TEST_TEXT)) == 0
 
     # # delete_directories
     # dm.delete_directories(sub_path=DEFAULT_BASE_PATH_NAME)
