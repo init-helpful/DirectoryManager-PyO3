@@ -10,13 +10,11 @@ except ImportError:
     print("You might need to run 'maturin develop' in the DirMan project root.")
     sys.exit(1)
 
-# --- Configuration Constants ---
 DEFAULT_SEPARATOR_CHAR = "-"
 DEFAULT_SEPARATOR_LINE_LENGTH = 80
 DEFAULT_ENCODING = "utf-8"
 TREE_HEADER_TEXT = "Project File Structure"
 
-# --- Language Specific Default Configurations ---
 LANGUAGE_DEFAULTS = {
     "generic": {
         "file_types": [],
@@ -138,7 +136,6 @@ LANGUAGE_DEFAULTS = {
     }
 }
 
-# --- Helper Data Structures ---
 class FileToProcess(NamedTuple):
     absolute_path: Path
     relative_path_posix: str
@@ -150,7 +147,6 @@ class EffectiveConfig(NamedTuple):
     ignore_path_components: List[str]
     active_preset_name: str
 
-# --- Core Logic Functions ---
 def validate_root_directory(root_dir_param: Optional[str]) -> Optional[Path]:
     original_param_for_messaging = root_dir_param if root_dir_param else "current working directory"
     try:
@@ -198,7 +194,13 @@ def _generate_tree_lines_dirman(
         for i, (child_obj, child_is_dir, child_display_name) in enumerate(children):
             is_last = (i == num_children - 1)
             connector = "└── " if is_last else "├── "
-            tree_lines.append("".join(prefix_parts) + connector + child_display_name)
+            
+            final_display_name = child_display_name
+            if not child_is_dir:
+                pass
+
+
+            tree_lines.append("".join(prefix_parts) + connector + final_display_name)
             if child_is_dir:
                 new_prefix_parts = prefix_parts + ["    " if is_last else "│   "]
                 _recursive_build(child_obj.path, new_prefix_parts)
@@ -321,15 +323,15 @@ def collect_and_append_files_dirman(
     target_extensions_for_dm = [ft for ft in effective_config.target_file_types if ft.startswith(".")]
     target_exact_filenames_for_dm = [ft for ft in effective_config.target_file_types if not ft.startswith(".")]
 
-
     dm = DirectoryManager(
-        root_path=str(root_dir) if root_dir else None, # Explicitly pass None if root_dir is empty string from param
+        root_path=str(root_dir) if root_dir else None, 
         target_extensions=target_extensions_for_dm if target_extensions_for_dm else None,
         target_exact_filenames=target_exact_filenames_for_dm if target_exact_filenames_for_dm else None,
         ignore_path_components=effective_config.ignore_path_components if effective_config.ignore_path_components else None,
         ignore_filename_substrings=effective_config.ignore_fname_substrings if effective_config.ignore_fname_substrings else None,
         whitelist_filename_substrings=effective_config.whitelist_fname_substrings if effective_config.whitelist_fname_substrings else None
     )
+    
     
     print(f"DirectoryManager (pre-filtered in Rust) gathered {len(dm.directories)} directories and {len(dm.files)} files.")
 
@@ -441,18 +443,27 @@ def print_configuration_summary(
         print(f"Effective Ignored Path Components: {', '.join(config.ignore_path_components)}")
     print("--- End Configuration Summary ---")
 
-def main_dirman():
+def main():
     root_directory_to_scan_param: Optional[str] = "" 
     output_file_name: str = "project_code_snapshot_dirman.txt" 
     language_preset_name: Optional[str] = "rust"
+    
     additional_target_file_types: List[str] = [".py"]
     additional_whitelist_filename_substrings: Optional[List[str]] = []
-    additional_ignore_filename_substrings: Optional[List[str]] = ["Cargo.lock", "snapshot_dirman.py", "snapshot_os_walk.py", "test_snapshot_speed.py"]
-    additional_ignore_path_components: Optional[List[str]] = ["objects", ".git", ".github", "target/debug/deps", "target/release/deps", "target/rls"]
+    additional_ignore_filename_substrings: Optional[List[str]] = [
+        "Cargo.lock"
+    ] 
+    additional_ignore_path_components: Optional[List[str]] = [
+        "objects", ".git", ".github", 
+        "target/debug/deps", "target/release/deps", "target/rls",
+        "Tests/TestData"
+    ]
+
     file_encoding: str = DEFAULT_ENCODING
     separator_char_config: str = DEFAULT_SEPARATOR_CHAR
     separator_len_config: int = DEFAULT_SEPARATOR_LINE_LENGTH
     generate_tree_flag: bool = True
+
 
     print("--- Starting File Collection Script (Dirman Version with Rust Filtering) ---")
     effective_config = load_and_merge_configurations(
@@ -466,7 +477,9 @@ def main_dirman():
     if actual_root_dir is None:
         print("--- Script Execution Failed: Invalid root directory ---")
         sys.exit(1)
+        
     abs_output_content_file = Path(output_file_name).resolve()
+
     print_configuration_summary(
         actual_root_dir,
         abs_output_content_file,
@@ -486,4 +499,4 @@ def main_dirman():
     print("\n--- Script Execution Finished (Dirman Version with Rust Filtering) ---")
 
 if __name__ == "__main__":
-    main_dirman()
+    main()

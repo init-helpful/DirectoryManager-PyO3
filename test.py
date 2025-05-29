@@ -27,13 +27,13 @@ def generate_test_environment(
 ):
     for dir_index in range(num_directories):
         dir_sub_path = f"{base_dir_name}_{dir_index + 1}"
-        dm.create_directory(dir_sub_path)
+        dm.create_directory(dir_sub_path) # DM state updated
 
         for file_char_index in range(num_files_per_dir):
             file_char = chr(ord("a") + file_char_index)
             file_stem = get_test_file_name(file_char) 
             file_content = f"Content for {file_stem}.{DEFAULT_FILE_EXTENSION} in {dir_sub_path}"
-            dm.create_file(dir_sub_path, file_stem, DEFAULT_FILE_EXTENSION, file_content)
+            dm.create_file(dir_sub_path, file_stem, DEFAULT_FILE_EXTENSION, file_content) # DM state updated
 
 def time_it(func):
     def wrapper(*args, **kwargs):
@@ -55,7 +55,7 @@ class TestDirman(unittest.TestCase):
         
         cls.dm = DirectoryManager(TEST_DATA_ROOT)
         generate_test_environment(cls.dm, num_files_per_dir=3, num_directories=2)
-        cls.dm.gather() 
+
 
     @classmethod
     @time_it
@@ -73,11 +73,7 @@ class TestDirman(unittest.TestCase):
     def tearDown(self):
         """This method is called after each test method."""
         time.sleep(INTER_TEST_PAUSE_SECONDS)
-        # You could also add a dm.gather() here if you want each test to start
-        # with a manager perfectly synced to the state left by the previous test,
-        # but that might hide issues if tests are not truly independent.
-        # For now, just a pause.
-        # print(f"--- Paused for {INTER_TEST_PAUSE_SECONDS}s after {self._testMethodName} ---")
+
 
 
     @time_it
@@ -118,18 +114,16 @@ class TestDirman(unittest.TestCase):
         dir_to_test_in = f"{DEFAULT_BASE_DIR_NAME}_1"
         original_file_stem = get_test_file_name("c")
 
-        self.dm.gather()
         files_before_rename = self.dm.find_files(name=original_file_stem, sub_path=dir_to_test_in, extension=DEFAULT_FILE_EXTENSION)
         self.assertEqual(len(files_before_rename), 1, f"Should find exactly one file named '{original_file_stem}.{DEFAULT_FILE_EXTENSION}' in '{dir_to_test_in}' to rename")
 
         new_full_filename = f"{RENAMED_FILE_STEM}.{RENAMED_FILE_EXTENSION}"
 
-        # Modified call: new_full_filename is now positional
         self.dm.rename_file(
-            new_full_name=new_full_filename,       # Keyword
-            current_name_stem=original_file_stem,  # Keyword
-            current_sub_path=dir_to_test_in,       # Keyword
-            current_extension=DEFAULT_FILE_EXTENSION # Keyword
+            new_full_name=new_full_filename,       
+            current_name_stem=original_file_stem,  
+            current_sub_path=dir_to_test_in,       
+            current_extension=DEFAULT_FILE_EXTENSION 
         )
 
         files_after_rename_old_name = self.dm.find_files(name=original_file_stem, sub_path=dir_to_test_in, extension=DEFAULT_FILE_EXTENSION)
@@ -143,16 +137,9 @@ class TestDirman(unittest.TestCase):
             
     @time_it
     def test_05_move_files(self):
-        # Ensure the environment is as expected from setUpClass + any prior test modifications
-        self.dm.gather() # Good practice to gather if state from prior tests might affect this one's setup
-
         source_dir_sub_path = f"{DEFAULT_BASE_DIR_NAME}_2" 
         
-        # Check if move_destination already exists (e.g. from a previous failed run or another test)
-        # If so, we might want to clean it or use a more unique name for this test.
-        # For simplicity now, we assume setUpClass provides a clean slate for these.
         self.dm.create_directory(MOVE_TEST_DIR_NAME)
-        self.dm.gather() # Gather after creating the destination directory
 
         dest_dir_obj_list = self.dm.find_directories(name=MOVE_TEST_DIR_NAME, return_first_found=True)
         self.assertEqual(len(dest_dir_obj_list),1, f"Destination directory {MOVE_TEST_DIR_NAME} not found or not unique by manager")
@@ -167,7 +154,6 @@ class TestDirman(unittest.TestCase):
             sub_path=source_dir_sub_path, 
             dest_directory_name=MOVE_TEST_DIR_NAME 
         )
-        self.dm.gather() # Gather after moving files
 
         files_in_source_after = self.dm.find_files(sub_path=source_dir_sub_path)
         self.assertEqual(len(files_in_source_after), 0, "Files should be removed from source directory")
@@ -177,41 +163,39 @@ class TestDirman(unittest.TestCase):
 
     @time_it
     def test_06_delete_file(self):
-        temp_dir = "temp_delete_dir_test06" # Unique name for this test
+        temp_dir = "temp_delete_dir_test06" 
         temp_file_stem = "deletable_file"
         temp_file_ext = "tmp"
         
         self.dm.create_directory(temp_dir)
         self.dm.create_file(temp_dir, temp_file_stem, temp_file_ext, "content")
-        self.dm.gather() # Ensure manager sees newly created file/dir
+
 
         files_before_delete = self.dm.find_files(name=temp_file_stem, sub_path=temp_dir, extension=temp_file_ext)
         self.assertEqual(len(files_before_delete), 1, "File to be deleted should exist")
 
         self.dm.delete_files(name=temp_file_stem, sub_path=temp_dir, extension=temp_file_ext)
-        self.dm.gather() # Ensure manager updates after delete
+
 
         files_after_delete = self.dm.find_files(name=temp_file_stem, sub_path=temp_dir, extension=temp_file_ext)
         self.assertEqual(len(files_after_delete), 0, "File should be deleted")
         
-        self.dm.delete_directories(name=temp_dir) 
-        self.dm.gather()
+        self.dm.delete_directories(name=temp_dir)
+
 
 
     @time_it
     def test_07_print_tree(self):
         print("\n--- Test Tree Output ---")
         try:
-            self.dm.gather() 
+
             self.dm.print_tree()
             print("----------------------")
         except Exception as e:
             self.fail(f"dm.print_tree() raised an exception: {e}")
             
     @time_it
-    def test_08_find_text_in_files(self):
-        self.dm.gather() # Ensure we're looking at the current state of FS
-
+    def test_08_find_text_in_files_and_file_write_size_update(self):
         search_string_unique_to_one_file = f"Content for {get_test_file_name('a')}.{DEFAULT_FILE_EXTENSION} in {DEFAULT_BASE_DIR_NAME}_1"
         search_string_common = "Content for" 
 
@@ -221,14 +205,12 @@ class TestDirman(unittest.TestCase):
             self.assertTrue(get_test_file_name("a") in found_specific[0].name)
             self.assertTrue(f"{DEFAULT_BASE_DIR_NAME}_1" in found_specific[0].path)
 
-        # Re-count files that should have the common text based on current manager state
-        # This is more robust than assuming a fixed number from setUpClass if other tests modify files.
         expected_common_count = 0
-        for f in self.dm.files:
+        for f_obj_in_dm in self.dm.files:
             try:
-                if search_string_common in f.read():
+                if search_string_common in f_obj_in_dm.read():
                     expected_common_count +=1
-            except Exception: # Skip files that might be unreadable for some reason
+            except Exception:
                 pass
         
         found_common = self.dm.find_text(search_string_common)
@@ -237,6 +219,37 @@ class TestDirman(unittest.TestCase):
         found_none = self.dm.find_text("gibberish_text_not_in_any_file_qwerty_123_xyz")
         self.assertEqual(len(found_none), 0)
 
+        # Test File.write() and its size update on the File object instance
+        if found_specific:
+            file_to_write = found_specific[0] # This is a clone
+            original_size = file_to_write.size
+            new_content = "This is new, longer content."
+            file_to_write.write(new_content, overwrite=True) # This updates file_to_write.size
+
+            self.assertEqual(file_to_write.read(), new_content)
+            self.assertEqual(file_to_write.size, len(new_content.encode('utf-8'))) # Assuming utf-8 for len
+            self.assertNotEqual(file_to_write.size, original_size)
+
+            # Verify the DM's internal cache for this file path might still have the old size
+            # unless a gather() is called or the DM's File object was directly mutated (not possible here).
+            # Re-fetch from DM to see its cached version.
+            # This behavior is important to understand: modifications to cloned File objects
+            # do not automatically update the DirectoryManager's internal list of File objects.
+            dm_internal_file_version = self.dm.find_file(name=file_to_write.name, extension=file_to_write.extension, sub_path=os.path.dirname(os.path.relpath(file_to_write.path, self.dm.root_path)))
+            if dm_internal_file_version:
+                # This check depends on whether find_file returns a new clone or if DM state reflects the write.
+                # With current changes, find_file returns a new clone based on current FS, so it SHOULD reflect the new size *if* find_file re-reads metadata.
+                # Let's assume File.new() is called by find_file which re-reads metadata.
+                # However, find_file in Rust currently searches self.files (the cached list). So it will return a clone of the cached (old size) file.
+                # A gather() would be needed to make dm_internal_file_version.size reflect the new size from disk.
+
+                self.dm.gather() # Explicitly gather to update DM's internal cache
+
+                dm_refreshed_file_version = self.dm.find_file(name=file_to_write.name, extension=file_to_write.extension, sub_path=os.path.dirname(os.path.relpath(file_to_write.path, self.dm.root_path)))
+                if dm_refreshed_file_version:
+                    self.assertEqual(dm_refreshed_file_version.size, len(new_content.encode('utf-8')), "DM's size for file should be updated after gather()")
+
+
     @time_it
     def test_09_delete_directories(self):
         dir_to_delete_base = "dir_for_deletion_test09" 
@@ -244,7 +257,6 @@ class TestDirman(unittest.TestCase):
         self.dm.create_directory(f"{dir_to_delete_base}_1")
         self.dm.create_file(f"{dir_to_delete_base}_1", "file1_in_del_dir", "txt", "content")
         self.dm.create_directory(f"{dir_to_delete_base}_2")
-        self.dm.gather() 
 
         dirs_before = self.dm.find_directories(sub_path=dir_to_delete_base)
         self.assertEqual(len(dirs_before), 2, "Should find 2 directories to delete")
@@ -253,7 +265,7 @@ class TestDirman(unittest.TestCase):
         self.assertEqual(len(files_in_dir1_before), 1, "Should find 1 file in the first directory to be deleted")
 
         self.dm.delete_directories(sub_path=dir_to_delete_base)
-        self.dm.gather() # Crucial to gather after deletion to reflect FS changes and cache pruning
+
 
         dirs_after = self.dm.find_directories(sub_path=dir_to_delete_base)
         self.assertEqual(len(dirs_after), 0, "Directories should be deleted from manager")

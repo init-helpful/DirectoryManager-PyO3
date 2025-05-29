@@ -15,6 +15,13 @@ impl PartialEq for File {
 }
 impl Eq for File {} // If PartialEq is defined, Eq is often useful
 
+// use std::hash::{Hash, Hasher};
+// impl Hash for File {
+//     fn hash<H: Hasher>(&self, state: &mut H) {
+//         self.path.hash(state);
+//     }
+// }
+
 
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -95,6 +102,9 @@ impl File {
             .into_owned();
         // Size typically doesn't change on rename, but if it could, refresh:
         // self.size = fs::metadata(&self.path)?.len();
+        // If the OS guarantees size is preserved on rename within the same filesystem,
+        // no need to update self.size. For cross-filesystem renames (which fs::rename might emulate),
+        // size could change. Assume size is preserved by typical rename operation.
         Ok(())
     }
 
@@ -107,7 +117,7 @@ impl File {
     /// If overwrite is true, the file is truncated before writing.
     /// If overwrite is false, the text is appended to the file.
     /// The file is created if it does not exist.
-    pub fn write(&self, text: &str, overwrite: bool) -> PyResult<()> {
+    pub fn write(&mut self, text: &str, overwrite: bool) -> PyResult<()> {
         let mut options = OpenOptions::new();
         options.create(true); // Create if it doesn't exist
 
@@ -125,10 +135,11 @@ impl File {
             PyIOError::new_err(format!("Failed to write to file {}: {}", self.path, e))
         })?;
         
-        // Note: self.size is not updated here as method takes &self.
-        // The File object might become stale regarding its size.
-        // Consider taking &mut self and updating self.size = fs::metadata(&self.path)?.len();
-        // or have DirectoryManager refresh it.
+        // Update self.size after writing
+        let metadata = fs::metadata(&self.path)
+            .map_err(|e| PyIOError::new_err(format!("Failed to get metadata for {}: {}", self.path, e)))?;
+        self.size = metadata.len();
+
         Ok(())
     }
 

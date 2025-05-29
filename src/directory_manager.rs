@@ -92,7 +92,7 @@ impl DirectoryManager {
         let mut has_target_criteria = false;
 
         if let Some(target_exts) = &self.target_extensions {
-            if !target_exts.is_empty() {
+            if !target_exts.is_empty() { // Optimization
                 has_target_criteria = true;
                 // target_exts contains ".py", file_ext_lower is "py"
                 if target_exts.contains(&format!(".{}", file_ext_lower)) {
@@ -103,7 +103,7 @@ impl DirectoryManager {
 
         if !matched_type {
             if let Some(target_exact) = &self.target_exact_filenames {
-                if !target_exact.is_empty() {
+                if !target_exact.is_empty() { // Optimization
                     has_target_criteria = true;
                     // target_exact contains "makefile", entry_name_lower is "makefile" (full filename)
                     if target_exact.contains(&entry_name_lower) {
@@ -127,7 +127,7 @@ impl DirectoryManager {
         }
 
         if let Some(ignore_subs) = &self.ignore_filename_substrings {
-             if !ignore_subs.is_empty() {
+             if !ignore_subs.is_empty() { // Optimization
                 if ignore_subs.iter().any(|sub| entry_name_lower.contains(sub)) {
                     return false;
                 }
@@ -445,6 +445,8 @@ impl DirectoryManager {
             self.extensions.sort();
         }
         self.files.push(new_file_obj);
+        // Ensure files list is sorted to maintain order
+        self.files.sort_by(|a, b| a.path.cmp(&b.path));
 
         Ok(())
     }
@@ -461,6 +463,7 @@ impl DirectoryManager {
             self.find_file(current_name_stem, current_sub_path, current_extension)?;
         let old_path_key = file_to_rename_info.path.clone();
 
+        // Find the actual File object in self.files to modify it in place
         let file_in_manager = self
             .files
             .iter_mut()
@@ -472,7 +475,19 @@ impl DirectoryManager {
                 ))
             })?;
 
+        // old_ext_for_cleanup could be used if we wanted to implement extension pruning
+        // let old_ext_for_cleanup = file_in_manager.extension.clone();
+
         file_in_manager.rename(new_full_name)?;
+
+        // After rename, file_in_manager.extension has the new extension. Add if it's new.
+        if !file_in_manager.extension.is_empty() && !self.extensions.contains(&file_in_manager.extension) {
+            self.extensions.push(file_in_manager.extension.clone());
+            self.extensions.sort();
+        }
+        
+        // The path has changed, so self.files might need re-sorting.
+        self.files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(())
     }
 
@@ -514,7 +529,11 @@ impl DirectoryManager {
         let paths_to_delete: HashSet<_> = files_found_for_deletion
             .iter()
             .map(|f| f.path.as_str())
+            // .inspect(|p| println!("Path to delete: {}", p)) // Debug
             .collect();
+
+        // println!("Paths to delete (HashSet): {:?}", paths_to_delete); // Debug
+        // println!("self.files before retain: {:?}", self.files.iter().map(|f|&f.path).collect::<Vec<_>>()); // Debug
 
         for file_path_str in &paths_to_delete {
             fs::remove_file(file_path_str).map_err(|e| {
@@ -524,7 +543,11 @@ impl DirectoryManager {
 
         self.files
             .retain(|f| !paths_to_delete.contains(f.path.as_str()));
-        // Also update extensions list if needed, though not critical for this script
+        // println!("self.files after retain: {:?}", self.files.iter().map(|f|&f.path).collect::<Vec<_>>()); // Debug
+
+        // Extensions list is not pruned here to avoid complexity.
+        // A `gather()` would be needed to refresh it accurately if files
+        // constituting the sole use of an extension are removed.
         Ok(())
     }
 
@@ -578,6 +601,9 @@ impl DirectoryManager {
             if let Some(f_in_manager) = self.files.iter_mut().find(|f| f.path == old_file_path_str)
             {
                 f_in_manager.path = new_file_path.to_string_lossy().into_owned();
+                // Name and extension also need to be updated if new_full_name logic was complex
+                // For simple rename to new dir, name/ext remain same, only path changes.
+                // If rename also changed name.ext, then update:
                  f_in_manager.name = new_file_path
                     .file_stem()
                     .unwrap_or_default()
@@ -588,8 +614,22 @@ impl DirectoryManager {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned();
+                
+                // Refresh size metadata, as rename (especially across filesystems) might change it
+                // or it's good practice to ensure it's fresh.
+                if let Ok(metadata) = fs::metadata(&f_in_manager.path) {
+                     f_in_manager.size = metadata.len();
+                } // else: log error or size becomes stale.
+
+                // If extension changed, add new one to self.extensions
+                if !f_in_manager.extension.is_empty() && !self.extensions.contains(&f_in_manager.extension) {
+                    self.extensions.push(f_in_manager.extension.clone());
+                    self.extensions.sort();
+                }
             }
         }
+        // Paths have changed, re-sort self.files.
+        self.files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(())
     }
     
@@ -629,6 +669,8 @@ impl DirectoryManager {
         // Avoid adding if it's already there (e.g., due to race or re-creation)
         if !self.directories.iter().any(|d| d.path == new_directory.path) {
             self.directories.push(new_directory);
+            // Ensure directories list is sorted
+            self.directories.sort_by(|a, b| a.path.cmp(&b.path));
         }
         Ok(())
     }
@@ -675,6 +717,9 @@ impl DirectoryManager {
             !dir_paths_to_delete_set.iter().any(|deleted_dir_path| file_path.starts_with(deleted_dir_path))
         });
         Ok(())
+        // Extensions list is not pruned here.
+        // self.directories and self.files retain their sort order after `retain`.
+
     }
 
     fn move_directories(
@@ -747,6 +792,10 @@ impl DirectoryManager {
                  }
             }
         }
+        // Paths have changed for many items, re-sort both lists.
+        self.directories.sort_by(|a, b| a.path.cmp(&b.path));
+        self.files.sort_by(|a, b| a.path.cmp(&b.path));
+
         Ok(())
     }
 }
