@@ -1,148 +1,180 @@
-use pyo3::exceptions::PyIOError;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat};
-use pyo3::PyResult;
-use std::ffi::OsStr;
-use std::fs;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
+
+// PartialEq for Rust-side comparisons (e.g., Vec::contains)
+// Made consistent with Python's __eq__
 impl PartialEq for File {
     fn eq(&self, other: &Self) -> bool {
         self.path == other.path
     }
 }
+impl Eq for File {} // If PartialEq is defined, Eq is often useful
+
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct File {
     #[pyo3(get)]
     pub path: String,
     #[pyo3(get)]
-    pub name: String,
+    pub name: String, // Base name of the file, without extension
     #[pyo3(get)]
     pub extension: String,
-    #[pyo3(get)]
+    #[pyo3(get, set)] // Allow size to be set if updated manually or by DirectoryManager
     pub size: u64,
 }
 
 #[pymethods]
 impl File {
     #[new]
-    pub fn new(path: String) -> PyResult<Self> {
-        let path_obj = Path::new(&path);
+    pub fn new(path: &str) -> PyResult<Self> {
+        let path_obj = Path::new(path);
 
         let name = path_obj
             .file_stem()
-            .map_or_else(|| "".to_string(), |n| n.to_string_lossy().to_string());
+            .unwrap_or_default() // For files like ".bashrc", file_stem is ".bashrc"
+            .to_string_lossy()
+            .to_string();
 
         let extension = path_obj
             .extension()
-            .map_or_else(|| "".to_string(), |e| e.to_string_lossy().to_string());
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
-        let size = fs::metadata(&path)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
-            .len();
+        let metadata = fs::metadata(path_obj)
+            .map_err(|e| PyValueError::new_err(format!("Failed to get metadata for {}: {}", path, e)))?;
+        
+        let size = metadata.len();
 
         Ok(File {
-            path,
+            path: path.to_string(),
             name,
             extension,
             size,
         })
     }
 
-    pub fn rename(&mut self, new_name: &str) {
-        // Construct the new path
-        let old_path = Path::new(&self.path);
-        let parent = old_path.parent().expect("Failed to get parent directory");
+    /// Renames the file. The new name should be the full filename (e.g., "new_name.txt").
+    pub fn rename(&mut self, new_full_name: &str) -> PyResult<()> {
+        let old_path_obj = Path::new(&self.path);
+        let parent_dir = old_path_obj.parent().ok_or_else(|| {
+            PyIOError::new_err(format!(
+                "File path '{}' has no parent directory.",
+                self.path
+            ))
+        })?;
 
-        // Extract the extension from the old file name
-        let extension = old_path.extension().and_then(OsStr::to_str).unwrap_or("");
+        let new_path_obj = parent_dir.join(new_full_name);
 
-        // Append the extension to the new file name
-        let new_name_with_extension = format!("{}.{}", new_name, extension);
+        fs::rename(old_path_obj, &new_path_obj).map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to rename file from '{}' to '{}': {}",
+                self.path,
+                new_path_obj.display(),
+                e
+            ))
+        })?;
 
-        let new_path = parent.join(&new_name_with_extension);
-
-        // Rename the file
-        fs::rename(&old_path, &new_path).expect("Failed to rename file");
-
-        // Update the name and path of the File object
-        self.name = new_name.to_string();
-        self.path = new_path.to_string_lossy().into_owned();
+        // Update fields after successful rename
+        self.path = new_path_obj.to_string_lossy().into_owned();
+        self.name = new_path_obj
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        self.extension = new_path_obj
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        // Size typically doesn't change on rename, but if it could, refresh:
+        // self.size = fs::metadata(&self.path)?.len();
+        Ok(())
     }
 
     pub fn read(&self) -> PyResult<String> {
-        let content =
-            fs::read_to_string(&self.path).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(content)
+        fs::read_to_string(&self.path)
+            .map_err(|e| PyValueError::new_err(format!("Failed to read file {}: {}", self.path, e)))
     }
 
-    pub fn write(&self, text: String, overwrite: bool) -> PyResult<()> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(!overwrite)
-            .append(overwrite)
-            .open(&self.path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+    /// Writes text to the file.
+    /// If overwrite is true, the file is truncated before writing.
+    /// If overwrite is false, the text is appended to the file.
+    /// The file is created if it does not exist.
+    pub fn write(&self, text: &str, overwrite: bool) -> PyResult<()> {
+        let mut options = OpenOptions::new();
+        options.create(true); // Create if it doesn't exist
 
         if overwrite {
-            write!(file, "{}", text).map_err(|e| PyIOError::new_err(e.to_string()))?;
+            options.write(true).truncate(true);
         } else {
-            writeln!(file, "{}", text).map_err(|e| PyIOError::new_err(e.to_string()))?;
+            options.append(true);
         }
 
+        let mut file = options.open(&self.path).map_err(|e| {
+            PyIOError::new_err(format!("Failed to open file {}: {}", self.path, e))
+        })?;
+
+        file.write_all(text.as_bytes()).map_err(|e| {
+            PyIOError::new_err(format!("Failed to write to file {}: {}", self.path, e))
+        })?;
+        
+        // Note: self.size is not updated here as method takes &self.
+        // The File object might become stale regarding its size.
+        // Consider taking &mut self and updating self.size = fs::metadata(&self.path)?.len();
+        // or have DirectoryManager refresh it.
         Ok(())
     }
 
     fn get_metadata(&self, py: Python) -> PyResult<PyObject> {
-        let metadata =
-            fs::metadata(&self.path).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let metadata = fs::metadata(&self.path)
+            .map_err(|e| PyValueError::new_err(format!("Failed to get metadata for {}: {}", self.path, e)))?;
 
         let dict = PyDict::new(py);
 
-        if let Ok(last_modified) = metadata.modified() {
-            if let Ok(duration_since_epoch) = last_modified.duration_since(UNIX_EPOCH) {
-                dict.set_item(
-                    "last_modified",
-                    PyFloat::new(py, duration_since_epoch.as_secs_f64()),
-                )?;
+        if let Ok(modified_time) = metadata.modified() {
+            if let Ok(duration_since_epoch) = modified_time.duration_since(UNIX_EPOCH) {
+                dict.set_item("last_modified", PyFloat::new(py, duration_since_epoch.as_secs_f64()))?;
             }
         }
 
-        if let Ok(creation_time) = metadata.created() {
-            if let Ok(duration_since_epoch) = creation_time.duration_since(UNIX_EPOCH) {
-                dict.set_item(
-                    "creation_time",
-                    PyFloat::new(py, duration_since_epoch.as_secs_f64()),
-                )?;
+        if let Ok(created_time) = metadata.created() {
+            if let Ok(duration_since_epoch) = created_time.duration_since(UNIX_EPOCH) {
+                dict.set_item("creation_time", PyFloat::new(py, duration_since_epoch.as_secs_f64()))?;
             }
         }
 
         dict.set_item("is_read_only", metadata.permissions().readonly())?;
-        dict.set_item("size", metadata.len())?;
+        dict.set_item("size", metadata.len())?; // Current size from FS
 
-        // Convert the dictionary to a PyObject and return
         Ok(dict.to_object(py))
     }
 
     fn is_read_only(&self) -> PyResult<bool> {
-        let metadata =
-            fs::metadata(&self.path).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let metadata = fs::metadata(&self.path)
+            .map_err(|e| PyValueError::new_err(format!("Failed to get metadata for {}: {}", self.path, e)))?;
         Ok(metadata.permissions().readonly())
     }
 
-    fn __repr__(&self) -> PyResult<&String> {
-        Ok(&self.name)
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "File(path='{}', name='{}', extension='{}', size={})",
+            self.path, self.name, self.extension, self.size
+        ))
     }
 
+    fn __str__(&self) -> PyResult<String> {
+        Ok(self.path.clone())
+    }
+    
     fn __eq__(&self, other: &File) -> PyResult<bool> {
-        Ok(self.path == other.path
-            && self.name == other.name
-            && self.extension == other.extension
-            && self.size == other.size)
+        // Compare by path, assuming paths are canonical and unique.
+        Ok(self.path == other.path)
     }
 }
